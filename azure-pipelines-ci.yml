@@ -12,13 +12,12 @@ parameters:
     type: string
     default: "prod"
     values:
-      - dev
       - prod
 
 stages:
 
 # =========================================================
-# STAGE 1 - CI
+# CI STAGE
 # =========================================================
 
 - stage: CI
@@ -31,9 +30,9 @@ stages:
 
     steps:
 
-    # -----------------------------------------------------
+    # =====================================================
     # 1. Install Terraform
-    # -----------------------------------------------------
+    # =====================================================
 
     - script: |
         TERRAFORM_VERSION="1.15.5"
@@ -49,50 +48,69 @@ stages:
         sudo mv terraform /usr/local/bin/
 
         terraform version
+
       displayName: "Install Terraform"
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 2. Terraform Init
-    # -----------------------------------------------------
+    # =====================================================
 
     - script: |
-        cd environments/${{ parameters.environment }}
+        cd 10-AUGUST-CI-CD
 
         terraform init
+
       displayName: "Terraform Init"
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 3. Terraform Format Check
-    # -----------------------------------------------------
+    # =====================================================
 
     - script: |
-        cd environments/${{ parameters.environment }}
+        cd 10-AUGUST-CI-CD
 
-        terraform fmt -check -recursive
+        terraform fmt -check
+
       displayName: "Terraform Format Check"
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 4. Terraform Validate
-    # -----------------------------------------------------
+    # =====================================================
 
     - script: |
-        cd environments/${{ parameters.environment }}
+        cd 10-AUGUST-CI-CD
 
         terraform validate
+
       displayName: "Terraform Validate"
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 5. Terraform Plan
-    # -----------------------------------------------------
+    # =====================================================
 
-    - script: |
-        cd environments/${{ parameters.environment }}
-
-        terraform plan \
-          -var-file="terraform.tfvars" \
-          -out=tfplan
+    - task: AzureCLI@2
       displayName: "Terraform Plan"
+
+      inputs:
+        azureSubscription: "YOUR-SERVICE-CONNECTION-NAME"
+        scriptType: "bash"
+        scriptLocation: "inlineScript"
+
+        inlineScript: |
+          cd 10-AUGUST-CI-CD
+
+          echo "Current directory:"
+          pwd
+
+          echo "Files:"
+          ls -la
+
+          echo "Running Terraform Plan..."
+
+          terraform plan \
+            -var-file="terraform.tfvars" \
+            -out=tfplan

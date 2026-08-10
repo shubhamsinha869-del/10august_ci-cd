@@ -6,64 +6,93 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
+parameters:
+  - name: environment
+    displayName: "Environment"
+    type: string
+    default: "prod"
+    values:
+      - dev
+      - prod
+
 stages:
 
+# =========================================================
+# STAGE 1 - CI
+# =========================================================
+
 - stage: CI
-  displayName: Terraform CI
+  displayName: "Terraform CI"
 
   jobs:
+
   - job: TerraformCI
-    displayName: Terraform Validation and Plan
+    displayName: "Terraform Validation and Plan"
 
     steps:
 
+    # -----------------------------------------------------
     # 1. Install Terraform
+    # -----------------------------------------------------
+
     - script: |
         TERRAFORM_VERSION="1.15.5"
 
         echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-        curl -fsSL -o terraform.zip \
-          "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+        curl -fsSL \
+          https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
+          -o terraform.zip
 
         unzip -o terraform.zip
-        sudo mv terraform /usr/local/bin/terraform
+
+        sudo mv terraform /usr/local/bin/
 
         terraform version
-      displayName: Install Terraform
+      displayName: "Install Terraform"
 
+
+    # -----------------------------------------------------
     # 2. Terraform Init
-    - task: AzureCLI@2
-      displayName: Terraform Init
-      inputs:
-        azureSubscription: 'terraform-azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account show
-          terraform init
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
+    # -----------------------------------------------------
 
+    - script: |
+        cd environments/${{ parameters.environment }}
+
+        terraform init
+      displayName: "Terraform Init"
+
+
+    # -----------------------------------------------------
     # 3. Terraform Format Check
-    - script: |
-        terraform fmt -check
-      displayName: Terraform Format Check
-      workingDirectory: '$(System.DefaultWorkingDirectory)'
+    # -----------------------------------------------------
 
+    - script: |
+        cd environments/${{ parameters.environment }}
+
+        terraform fmt -check -recursive
+      displayName: "Terraform Format Check"
+
+
+    # -----------------------------------------------------
     # 4. Terraform Validate
-    - script: |
-        terraform validate
-      displayName: Terraform Validate
-      workingDirectory: '$(System.DefaultWorkingDirectory)'
+    # -----------------------------------------------------
 
+    - script: |
+        cd environments/${{ parameters.environment }}
+
+        terraform validate
+      displayName: "Terraform Validate"
+
+
+    # -----------------------------------------------------
     # 5. Terraform Plan
-    - task: AzureCLI@2
-      displayName: Terraform Plan
-      inputs:
-        azureSubscription: 'terraform-azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account show
-          terraform plan -out=tfplan
-        workingDirectory: '$(System.DefaultWorkingDirectory)'
+    # -----------------------------------------------------
+
+    - script: |
+        cd environments/${{ parameters.environment }}
+
+        terraform plan \
+          -var-file="terraform.tfvars" \
+          -out=tfplan
+      displayName: "Terraform Plan"

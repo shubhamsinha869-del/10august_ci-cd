@@ -17,7 +17,7 @@ stages:
 
     steps:
 
-    # 1. Install Terraform
+    # Install Terraform
     - script: |
         TERRAFORM_VERSION="1.15.5"
 
@@ -34,22 +34,31 @@ stages:
         terraform version
       displayName: Install Terraform
 
-    # 2. Terraform Init
+    # Terraform Init
     - script: |
         terraform init
       displayName: Terraform Init
 
-    # 3. Terraform Format Check
+    # Terraform Format
     - script: |
         terraform fmt -check -recursive
       displayName: Terraform Format Check
 
-    # 4. Terraform Validate
+    # Terraform Validate
     - script: |
         terraform validate
       displayName: Terraform Validate
 
-    # 5. Terraform Plan
-    - script: |
-        terraform plan
+    # Terraform Plan with Azure Service Connection
+    - task: AzureCLI@2
       displayName: Terraform Plan
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          echo "Checking Azure login..."
+          az account show
+
+          echo "Running Terraform Plan..."
+          terraform plan

@@ -1,0 +1,69 @@
+trigger:
+  branches:
+    include:
+      - feature/resource-group
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+- stage: CI
+  displayName: Terraform CI
+
+  jobs:
+  - job: TerraformCI
+    displayName: Terraform Validation and Plan
+
+    steps:
+
+    # 1. Install Terraform
+    - script: |
+        TERRAFORM_VERSION="1.15.5"
+
+        echo "Installing Terraform ${TERRAFORM_VERSION}"
+
+        curl -fsSL -o terraform.zip \
+          "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+
+        unzip -o terraform.zip
+        sudo mv terraform /usr/local/bin/terraform
+
+        terraform version
+      displayName: Install Terraform
+
+    # 2. Terraform Init
+    - task: AzureCLI@2
+      displayName: Terraform Init
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az account show
+          terraform init
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    # 3. Terraform Format Check
+    - script: |
+        terraform fmt -check
+      displayName: Terraform Format Check
+      workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    # 4. Terraform Validate
+    - script: |
+        terraform validate
+      displayName: Terraform Validate
+      workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+    # 5. Terraform Plan
+    - task: AzureCLI@2
+      displayName: Terraform Plan
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az account show
+          terraform plan -out=tfplan
+        workingDirectory: '$(System.DefaultWorkingDirectory)'

@@ -23,9 +23,7 @@ stages:
 
         echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-        curl -fsSL \
-          https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
-          -o terraform.zip
+        curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
 
         unzip -o terraform.zip
 
@@ -34,24 +32,20 @@ stages:
         terraform version
       displayName: Install Terraform
 
-
     # 2. Terraform Init
     - script: |
         terraform init -upgrade
       displayName: Terraform Init
-
 
     # 3. Terraform Format Check
     - script: |
         terraform fmt -check -recursive
       displayName: Terraform Format Check
 
-
     # 4. Terraform Validate
     - script: |
         terraform validate
       displayName: Terraform Validate
-
 
     # 5. Azure Login + Terraform Plan
     - task: AzureCLI@2

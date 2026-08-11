@@ -8,16 +8,24 @@ pool:
 
 stages:
 
+# ============================================================
+# STAGE 1: CI
+# ============================================================
+
 - stage: CI
   displayName: Terraform CI
 
   jobs:
+
   - job: TerraformCI
     displayName: Terraform Validation and Plan
 
     steps:
 
-    # 1. Install Terraform
+    # --------------------------------------------------------
+    # Step 1: Install Terraform
+    # --------------------------------------------------------
+
     - script: |
         TERRAFORM_VERSION="1.15.5"
 
@@ -33,25 +41,37 @@ stages:
       displayName: Install Terraform
 
 
-    # 2. Terraform Init
+    # --------------------------------------------------------
+    # Step 2: Terraform Init
+    # --------------------------------------------------------
+
     - script: |
         terraform init -upgrade
       displayName: Terraform Init
 
 
-    # 3. Terraform Format Check
+    # --------------------------------------------------------
+    # Step 3: Terraform Format Check
+    # --------------------------------------------------------
+
     - script: |
         terraform fmt -check -recursive
       displayName: Terraform Format Check
 
 
-    # 4. Terraform Validate
+    # --------------------------------------------------------
+    # Step 4: Terraform Validate
+    # --------------------------------------------------------
+
     - script: |
         terraform validate
       displayName: Terraform Validate
 
 
-    # 5. Azure Login + Terraform Plan using OIDC
+    # --------------------------------------------------------
+    # Step 5: Azure Login + Terraform Plan
+    # --------------------------------------------------------
+
     - task: AzureCLI@2
       displayName: Terraform Plan
       inputs:
@@ -61,11 +81,17 @@ stages:
         addSpnToEnvironment: true
 
         inlineScript: |
-          echo "Checking Azure authentication..."
+
+          echo "===================================="
+          echo "Checking Azure authentication"
+          echo "===================================="
 
           az account show
 
-          echo "Setting Terraform OIDC variables..."
+
+          echo "===================================="
+          echo "Setting Terraform OIDC variables"
+          echo "===================================="
 
           export ARM_USE_OIDC=true
           export ARM_CLIENT_ID=$servicePrincipalId
@@ -73,13 +99,138 @@ stages:
           export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           export ARM_OIDC_TOKEN=$idToken
 
-          echo "Terraform OIDC configuration:"
+
           echo "ARM_USE_OIDC=$ARM_USE_OIDC"
           echo "ARM_CLIENT_ID is set"
           echo "ARM_TENANT_ID is set"
           echo "ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
           echo "ARM_OIDC_TOKEN is set"
 
-          echo "Running Terraform Plan..."
 
-          terraform plan
+          echo "===================================="
+          echo "Running Terraform Plan"
+          echo "===================================="
+
+          terraform plan -out=tfplan
+
+          echo "Terraform Plan completed successfully."
+
+
+    # --------------------------------------------------------
+    # Step 6: Publish Terraform Plan
+    # --------------------------------------------------------
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish Terraform Plan
+      inputs:
+        targetPath: 'tfplan'
+        artifact: 'terraform-plan'
+        publishLocation: 'pipeline'
+
+
+# ============================================================
+# STAGE 2: CD
+# ============================================================
+
+- stage: CD
+  displayName: Terraform CD
+  dependsOn: CI
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: TerraformApply
+    displayName: Terraform Apply
+
+    environment: terraform-production
+
+    strategy:
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          # --------------------------------------------------
+          # Step 7: Download Terraform Plan Artifact
+          # --------------------------------------------------
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Terraform Plan
+            inputs:
+              artifact: 'terraform-plan'
+              path: '$(Pipeline.Workspace)/terraform-plan'
+
+
+          # --------------------------------------------------
+          # Step 8: Install Terraform
+          # --------------------------------------------------
+
+          - script: |
+              TERRAFORM_VERSION="1.15.5"
+
+              echo "Installing Terraform ${TERRAFORM_VERSION}"
+
+              curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+
+              unzip -o terraform.zip
+
+              sudo mv terraform /usr/local/bin/terraform
+
+              terraform version
+            displayName: Install Terraform
+
+
+          # --------------------------------------------------
+          # Step 9: Terraform Init
+          # --------------------------------------------------
+
+          - script: |
+              terraform init -upgrade
+            displayName: Terraform Init
+
+
+          # --------------------------------------------------
+          # Step 10: Azure Login + Terraform Apply
+          # --------------------------------------------------
+
+          - task: AzureCLI@2
+            displayName: Terraform Apply
+            inputs:
+              azureSubscription: 'terraform-azure-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              addSpnToEnvironment: true
+
+              inlineScript: |
+
+                echo "===================================="
+                echo "Checking Azure authentication"
+                echo "===================================="
+
+                az account show
+
+
+                echo "===================================="
+                echo "Setting Terraform OIDC variables"
+                echo "===================================="
+
+                export ARM_USE_OIDC=true
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                export ARM_OIDC_TOKEN=$idToken
+
+
+                echo "ARM_USE_OIDC=$ARM_USE_OIDC"
+                echo "ARM_CLIENT_ID is set"
+                echo "ARM_TENANT_ID is set"
+                echo "ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
+                echo "ARM_OIDC_TOKEN is set"
+
+
+                echo "===================================="
+                echo "Running Terraform Apply"
+                echo "===================================="
+
+                terraform apply "$(Pipeline.Workspace)/terraform-plan/tfplan"

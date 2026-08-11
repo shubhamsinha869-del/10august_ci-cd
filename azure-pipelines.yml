@@ -1,0 +1,61 @@
+trigger:
+  branches:
+    include:
+      - feature/resource-group
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+- stage: CI
+  displayName: Terraform CI
+
+  jobs:
+  - job: TerraformCI
+    displayName: Terraform Validation and Plan
+
+    steps:
+
+    - script: |
+        terraform version
+      displayName: Terraform Version
+
+    - script: |
+        terraform init
+      displayName: Terraform Init
+
+    - script: |
+        terraform fmt -check
+      displayName: Terraform Format Check
+
+    - script: |
+        terraform validate
+      displayName: Terraform Validate
+
+    - script: |
+        terraform plan
+      displayName: Terraform Plan
+
+
+- stage: CD
+  displayName: Terraform CD
+
+  jobs:
+  - deployment: TerraformApply
+    displayName: Terraform Apply
+
+    environment: terraform-prod
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - script: |
+              terraform init
+            displayName: Terraform Init
+
+          - script: |
+              terraform apply -auto-approve
+            displayName: Terraform Apply

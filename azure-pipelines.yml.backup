@@ -1,4 +1,4 @@
-trigger:
+﻿trigger:
   branches:
     include:
       - feature/resource-group
@@ -36,6 +36,7 @@ stages:
     - script: |
         terraform plan
       displayName: Terraform Plan
+
 
 - stage: CD
   displayName: Terraform CD

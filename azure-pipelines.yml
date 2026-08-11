@@ -1,3 +1,4 @@
+﻿```yaml
 trigger:
   branches:
     include:
@@ -8,6 +9,10 @@ pool:
 
 stages:
 
+# ============================================================
+# CI STAGE
+# ============================================================
+
 - stage: CI
   displayName: Terraform CI
 
@@ -17,44 +22,271 @@ stages:
 
     steps:
 
-    - script: |
-        terraform version
-      displayName: Terraform Version
+    # --------------------------------------------------------
+    # 1. Install Terraform
+    # --------------------------------------------------------
 
-    - script: |
-        terraform init
+    - task: CmdLine@2
+      displayName: Install Terraform
+      inputs:
+        script: |
+          TERRAFORM_VERSION="1.15.5"
+
+          echo "Installing Terraform ${TERRAFORM_VERSION}"
+
+          curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+
+          unzip -o terraform.zip
+
+          sudo mv terraform /usr/local/bin/terraform
+
+          terraform version
+
+
+    # --------------------------------------------------------
+    # 2. Terraform Init
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
       displayName: Terraform Init
+      inputs:
+        script: |
+          terraform init
 
-    - script: |
-        terraform fmt -check
+
+    # --------------------------------------------------------
+    # 3. Terraform Format Check
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
       displayName: Terraform Format Check
+      inputs:
+        script: |
+          terraform fmt -check -recursive
 
-    - script: |
-        terraform validate
+
+    # --------------------------------------------------------
+    # 4. Install TFLint
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: Install TFLint
+      inputs:
+        script: |
+          echo "Installing TFLint..."
+
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+          tflint --version
+
+
+    # --------------------------------------------------------
+    # 5. Run TFLint
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: TFLint
+      inputs:
+        script: |
+          echo "Running TFLint..."
+
+          tflint --init
+
+          tflint
+
+
+    # --------------------------------------------------------
+    # 6. Install Checkov
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: Install Checkov
+      inputs:
+        script: |
+          echo "Installing Checkov..."
+
+          python3 -m pip install --upgrade pip
+          pip3 install checkov
+
+          checkov --version
+
+
+    # --------------------------------------------------------
+    # 7. Run Checkov
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: Checkov Security Scan
+      inputs:
+        script: |
+          echo "Running Checkov..."
+
+          checkov -d .
+
+
+    # --------------------------------------------------------
+    # 8. Terraform Validate
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
       displayName: Terraform Validate
+      inputs:
+        script: |
+          terraform validate
 
-    - script: |
-        terraform plan
+
+    # --------------------------------------------------------
+    # 9. Terraform Plan
+    # --------------------------------------------------------
+
+    - task: AzureCLI@2
       displayName: Terraform Plan
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        addSpnToEnvironment: true
+        inlineScript: |
+
+          echo "Checking Azure authentication..."
+
+          az account show
+
+          echo "Running Terraform Plan..."
+
+          terraform plan -out=tfplan
+
+
+    # --------------------------------------------------------
+    # 10. Publish Terraform Plan
+    # --------------------------------------------------------
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish Terraform Plan
+      inputs:
+        targetPath: 'tfplan'
+        artifact: 'terraform-plan'
+        publishLocation: 'pipeline'
+
+
+# ============================================================
+# CD STAGE
+# ============================================================
 
 - stage: CD
   displayName: Terraform CD
 
+  dependsOn:
+    - CI
+
+  condition: succeeded()
+
   jobs:
-  - deployment: TerraformApply
+  - job: TerraformCD
     displayName: Terraform Apply
 
-    environment: terraform-prod
+    steps:
 
-    strategy:
-      runOnce:
-        deploy:
-          steps:
+    # --------------------------------------------------------
+    # 1. Install Terraform
+    # --------------------------------------------------------
 
-          - script: |
-              terraform init
-            displayName: Terraform Init
+    - task: CmdLine@2
+      displayName: Install Terraform
+      inputs:
+        script: |
+          TERRAFORM_VERSION="1.15.5"
 
-          - script: |
-              terraform apply -auto-approve
-            displayName: Terraform Apply
+          echo "Installing Terraform ${TERRAFORM_VERSION}"
+
+          curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+
+          unzip -o terraform.zip
+
+          sudo mv terraform /usr/local/bin/terraform
+
+          terraform version
+
+
+    # --------------------------------------------------------
+    # 2. Terraform Init
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: Terraform Init
+      inputs:
+        script: |
+          terraform init
+
+
+    # --------------------------------------------------------
+    # 3. Download Terraform Plan
+    # --------------------------------------------------------
+
+    - task: DownloadPipelineArtifact@2
+      displayName: Download Terraform Plan
+      inputs:
+        artifact: 'terraform-plan'
+        path: '$(Pipeline.Workspace)/terraform-plan'
+
+
+    # --------------------------------------------------------
+    # 4. Check Downloaded Plan
+    # --------------------------------------------------------
+
+    - task: CmdLine@2
+      displayName: Check Terraform Plan
+      inputs:
+        script: |
+          echo "Downloaded Terraform Plan:"
+
+          ls -la "$(Pipeline.Workspace)/terraform-plan"
+
+          echo "Checking tfplan file..."
+
+          test -f "$(Pipeline.Workspace)/terraform-plan/tfplan"
+
+          echo "Terraform plan file found successfully."
+
+
+    # --------------------------------------------------------
+    # 5. Terraform Apply
+    # --------------------------------------------------------
+
+    - task: AzureCLI@2
+      displayName: Terraform Apply
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        addSpnToEnvironment: true
+        inlineScript: |
+
+          echo "Checking Azure authentication..."
+
+          az account show
+
+          echo "Running Terraform Apply..."
+
+          terraform apply "$(Pipeline.Workspace)/terraform-plan/tfplan"
+
+
+    # --------------------------------------------------------
+    # 6. Terraform Output
+    # --------------------------------------------------------
+
+    - task: AzureCLI@2
+      displayName: Terraform Output
+      inputs:
+        azureSubscription: 'terraform-azure-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        addSpnToEnvironment: true
+        inlineScript: |
+
+          echo "Terraform Apply completed."
+
+          echo "Terraform Outputs:"
+
+          terraform output
+```

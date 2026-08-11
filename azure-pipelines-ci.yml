@@ -7,6 +7,7 @@ pool:
   vmImage: ubuntu-latest
 
 stages:
+
 - stage: CI
   displayName: Terraform CI
 
@@ -16,6 +17,7 @@ stages:
 
     steps:
 
+    # 1. Install Terraform
     - script: |
         TERRAFORM_VERSION="1.15.5"
 
@@ -31,21 +33,25 @@ stages:
       displayName: Install Terraform
 
 
+    # 2. Terraform Init
     - script: |
         terraform init -upgrade
       displayName: Terraform Init
 
 
+    # 3. Terraform Format Check
     - script: |
         terraform fmt -check -recursive
       displayName: Terraform Format Check
 
 
+    # 4. Terraform Validate
     - script: |
         terraform validate
       displayName: Terraform Validate
 
 
+    # 5. Azure Login + Terraform Plan using OIDC
     - task: AzureCLI@2
       displayName: Terraform Plan
       inputs:
@@ -53,9 +59,10 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         addSpnToEnvironment: true
-        inlineScript: |
 
+        inlineScript: |
           echo "Checking Azure authentication..."
+
           az account show
 
           echo "Setting Terraform OIDC variables..."
@@ -65,6 +72,13 @@ stages:
           export ARM_TENANT_ID=$tenantId
           export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           export ARM_OIDC_TOKEN=$idToken
+
+          echo "Terraform OIDC configuration:"
+          echo "ARM_USE_OIDC=$ARM_USE_OIDC"
+          echo "ARM_CLIENT_ID is set"
+          echo "ARM_TENANT_ID is set"
+          echo "ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
+          echo "ARM_OIDC_TOKEN is set"
 
           echo "Running Terraform Plan..."
 

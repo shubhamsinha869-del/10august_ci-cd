@@ -64,4 +64,13 @@ stages:
 
           echo "Running Terraform Plan..."
 
-          terraform plan
+          terraform plan -out=tfplan
+
+
+    # 6. Publish Terraform Plan
+    - task: PublishPipelineArtifact@1
+      displayName: Publish Terraform Plan
+      inputs:
+        targetPath: 'tfplan'
+        artifact: 'terraform-plan'
+        publishLocation: 'pipeline'

@@ -1,3 +1,4 @@
+```yaml
 trigger:
   branches:
     include:
@@ -8,9 +9,9 @@ pool:
 
 stages:
 
-# =====================================================
+# =========================================================
 # CI STAGE
-# =====================================================
+# =========================================================
 
 - stage: CI
   displayName: Terraform CI
@@ -21,74 +22,98 @@ stages:
 
     steps:
 
+    # -----------------------------------------------------
     # 1. Install Terraform
+    # -----------------------------------------------------
+
     - script: |
         TERRAFORM_VERSION="1.15.5"
 
         echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-        curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+        curl -fsSL \
+          https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
+          -o terraform.zip
 
-        unzip -o terraform.zip
+        unzip terraform.zip
 
-        sudo mv terraform /usr/local/bin/terraform
+        sudo mv terraform /usr/local/bin/
 
         terraform version
       displayName: Install Terraform
 
 
+    # -----------------------------------------------------
     # 2. Terraform Init
+    # -----------------------------------------------------
+
     - script: |
         terraform init
       displayName: Terraform Init
 
 
+    # -----------------------------------------------------
     # 3. Terraform Format Check
+    # -----------------------------------------------------
+
     - script: |
         terraform fmt -check -recursive
       displayName: Terraform Format Check
 
 
+    # -----------------------------------------------------
     # 4. Terraform Validate
+    # -----------------------------------------------------
+
     - script: |
         terraform validate
       displayName: Terraform Validate
 
 
-    # 5. Azure Login + Terraform Plan
-    - task: AzureCLI@2
+    # -----------------------------------------------------
+    # 5. Install TFLint
+    # -----------------------------------------------------
+
+    - script: |
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+        tflint --version
+      displayName: Install TFLint
+
+
+    # -----------------------------------------------------
+    # 6. Run TFLint
+    # -----------------------------------------------------
+
+    - script: |
+        tflint --init
+        tflint
+      displayName: TFLint
+
+
+    # -----------------------------------------------------
+    # 7. Terraform Plan
+    # -----------------------------------------------------
+
+    - script: |
+        terraform plan -out=tfplan
       displayName: Terraform Plan
 
-      inputs:
-        azureSubscription: 'terraform-azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        addSpnToEnvironment: true
 
-        inlineScript: |
+    # -----------------------------------------------------
+    # 8. Publish Terraform Plan
+    # -----------------------------------------------------
 
-          echo "Checking Azure authentication..."
-
-          az account show
-
-          echo "Running Terraform Plan..."
-
-          terraform plan -out=tfplan
-
-
-    # 6. Publish Terraform Plan
     - task: PublishPipelineArtifact@1
       displayName: Publish Terraform Plan
-
       inputs:
         targetPath: 'tfplan'
         artifact: 'terraform-plan'
-        publishLocation: 'pipeline'
 
 
-# =====================================================
+# =========================================================
 # CD STAGE
-# =====================================================
+# =========================================================
 
 - stage: CD
   displayName: Terraform CD
@@ -98,65 +123,70 @@ stages:
   condition: succeeded()
 
   jobs:
-  - job: TerraformCD
+
+  # -------------------------------------------------------
+  # Deployment Job
+  # -------------------------------------------------------
+
+  - deployment: TerraformApply
     displayName: Terraform Apply
 
-    steps:
+    # Azure DevOps Environment
+    environment: terraform-prod
 
-    # 1. Install Terraform
-    - script: |
-        TERRAFORM_VERSION="1.15.5"
+    strategy:
+      runOnce:
 
-        echo "Installing Terraform ${TERRAFORM_VERSION}"
+        deploy:
+          steps:
 
-        curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+          # ------------------------------------------------
+          # 1. Install Terraform
+          # ------------------------------------------------
 
-        unzip -o terraform.zip
+          - script: |
+              TERRAFORM_VERSION="1.15.5"
 
-        sudo mv terraform /usr/local/bin/terraform
+              echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-        terraform version
-      displayName: Install Terraform
+              curl -fsSL \
+                https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
+                -o terraform.zip
 
+              unzip terraform.zip
 
-    # 2. Terraform Init
-    - script: |
-        terraform init
-      displayName: Terraform Init
+              sudo mv terraform /usr/local/bin/
 
-
-    # 3. Download Terraform Plan
-    - task: DownloadPipelineArtifact@2
-      displayName: Download Terraform Plan
-
-      inputs:
-        artifact: 'terraform-plan'
-        path: '$(Pipeline.Workspace)/terraform-plan'
+              terraform version
+            displayName: Install Terraform
 
 
-    # 4. Check downloaded plan
-    - script: |
-        echo "Downloaded Terraform Plan:"
-        ls -la "$(Pipeline.Workspace)/terraform-plan"
-      displayName: Check Terraform Plan
+          # ------------------------------------------------
+          # 2. Download Plan Artifact
+          # ------------------------------------------------
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Terraform Plan
+            inputs:
+              artifact: terraform-plan
+              path: $(Pipeline.Workspace)/terraform-plan
 
 
-    # 5. Azure Login + Terraform Apply
-    - task: AzureCLI@2
-      displayName: Terraform Apply
+          # ------------------------------------------------
+          # 3. Terraform Init
+          # ------------------------------------------------
 
-      inputs:
-        azureSubscription: 'terraform-azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        addSpnToEnvironment: true
+          - script: |
+              terraform init
+            displayName: Terraform Init
 
-        inlineScript: |
 
-          echo "Checking Azure authentication..."
+          # ------------------------------------------------
+          # 4. Terraform Apply
+          # ------------------------------------------------
 
-          az account show
+          - script: |
+              terraform apply -auto-approve \
+                $(Pipeline.Workspace)/terraform-plan/tfplan
+            displayName: Terraform Apply
 
-          echo "Running Terraform Apply..."
-
-          terraform apply "$(Pipeline.Workspace)/terraform-plan/tfplan"
